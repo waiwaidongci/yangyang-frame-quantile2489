@@ -2,8 +2,9 @@
 
 from .account import Account
 from .audit import Audit
+from .checkpoint import RunCheckpoint
 from .dataset import Dataset
 from .review import Review
 from .run import Run
 
-__all__ = ['Account', 'Audit', 'Dataset', 'Review', 'Run']
+__all__ = ['Account', 'Audit', 'Dataset', 'Review', 'Run', 'RunCheckpoint']

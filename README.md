@@ -43,3 +43,10 @@ API 默认绑定 `127.0.0.1:19434`，PostgreSQL 16 绑定 `127.0.0.1:17934`。�
 | `model_profile` | 本次固定的提升参数、班次容量和训练常量分位 |
 
 `backend/src/domain/` 提供确定性的 Python 模型、校验和报告。路由位于 `backend/src/routes/`，工作流位于 `backend/src/services/`。JWT 用户角色、运行状态与审批决定由 `backend/src/constants/workflow.py` 定义，分别用于鉴权、worker 领取与轮询、结果可见性和导出。领域模型使用 Python 标准库。
+
+## 中断续跑与 worker 围栏
+
+提升训练按轮落检查点到 `run_checkpoints`：每个完整轮次在一个事务内同时写入该轮新树和更新后的训练预测，P50、P90 各自独立续跑。写到一半的轮次没有检查点，worker 重启时 `recover_jobs` 把 `running` 运行重新排队，接手进程从最后一个完整轮次之后继续，结果与一口气跑完逐项相同；运行完成后中途检查点随即清理。
+
+每次领取运行都会轮换 `analysis_runs.claim_token` 围栏令牌。旧进程若在重启后复活，其检查点写入和最终提交都会因令牌不匹配被拒绝，并收到 `TrainingFenced` 中断信号，同一运行只认接手进程的进度。旧版本数据库启动时由 `migrations/bootstrap.py` 幂等补齐 `claim_token` 列与检查点表。
+

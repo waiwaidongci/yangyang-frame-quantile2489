@@ -1,6 +1,6 @@
 """Application entry points for the shot ledger and the background worker."""
 
-from .boosting import QUANTILES, fit_quantile, predict_shot, shot_features
+from .boosting import QUANTILES, fit_quantile, fit_quantile_with_sink, predict_shot, shot_features
 from .evaluation import holdout_comparison
 from .fixtures import demo_rows
 from .records import normalize_rows
@@ -10,13 +10,17 @@ from .settings import SPEC, parse_settings
 __all__ = ["SPEC", "demo_rows", "normalize_rows", "analyze"]
 
 
-def analyze(rows: list[dict], settings: dict) -> dict:
+def analyze(rows: list[dict], settings: dict, run_id: int | None = None, sink=None) -> dict:
     options = parse_settings(settings)
     records = sorted(normalize_rows(rows), key=lambda row: (row["scene_id"], row["id"]))
     train = [row for row in records if row["split"] == "train"]
     features = [shot_features(row) for row in train]
     actual = [row["actual_minutes"] for row in train]
-    p50, p90 = (fit_quantile(features, actual, quantile, options) for quantile in QUANTILES)
+    if sink is None or run_id is None:
+        p50, p90 = (fit_quantile(features, actual, quantile, options) for quantile in QUANTILES)
+    else:
+        p50, p90 = (fit_quantile_with_sink(features, actual, quantile, options, run_id, sink)
+                    for quantile in QUANTILES)
     models = (p50, p90)
     baselines = {50: p50.constant, 90: p90.constant}
     holdout = [predict_shot(row, models) for row in records if row["split"] == "holdout"]

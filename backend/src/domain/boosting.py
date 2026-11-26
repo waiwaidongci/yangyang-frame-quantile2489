@@ -3,8 +3,9 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from .checkpoint import fit_quantile_resumable
 from .settings import FEATURES
-from .trees import Tree, Vector, fit_tree
+from .trees import Tree, Vector
 
 QUANTILES = (50, 90)
 
@@ -35,23 +36,16 @@ class QuantileModel:
 
 def fit_quantile(features: Sequence[Vector], actual: Sequence[float], percentile: int,
                  settings: dict) -> QuantileModel:
-    constant = empirical_quantile(actual, percentile)
+    trees, _fitted, constant = fit_quantile_resumable(features, actual, percentile, settings, run_id=0)
     rate = settings["learning_rate"]
-    alpha = percentile / 100
-    fitted = [constant] * len(actual)
-    trees = []
-    for _ in range(settings["estimators"]):
-        residuals = [observed - estimate for observed, estimate in zip(actual, fitted)]
-        # Zero is a valid subgradient at an exact hit.
-        gradients = [alpha if residual > 0 else alpha - 1 if residual < 0 else 0.0 for residual in residuals]
-
-        def correction(members: list[int]) -> float:
-            return empirical_quantile([residuals[index] for index in members], percentile)
-
-        tree = fit_tree(features, gradients, correction, settings["max_depth"], settings["min_leaf"])
-        fitted = [estimate + rate * tree.predict(vector) for estimate, vector in zip(fitted, features)]
-        trees.append(tree)
     return QuantileModel(constant, rate, tuple(trees))
+
+
+def fit_quantile_with_sink(features: Sequence[Vector], actual: Sequence[float], percentile: int,
+                           settings: dict, run_id: int, sink) -> QuantileModel:
+    trees, _fitted, constant = fit_quantile_resumable(
+        features, actual, percentile, settings, run_id=run_id, sink=sink)
+    return QuantileModel(constant, settings["learning_rate"], tuple(trees))
 
 
 def predict_shot(row: dict, models: tuple[QuantileModel, QuantileModel]) -> dict:
